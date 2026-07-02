@@ -19,6 +19,9 @@ import adminKycRoutes from './routes/adminKycRoutes.js';
 import adminServiceRoutes from './routes/adminServiceRoutes.js';
 import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
 import adminComplianceRoutes from './routes/adminComplianceRoutes.js';
+import offerRoutes from './routes/offerRoutes.js';
+import contentRoutes from './routes/contentRoutes.js';
+import aiServerRoutes from './routes/aiServerRoutes.js';
 
 const app = express();
 
@@ -42,6 +45,9 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/admin/kyc', adminKycRoutes);
+app.use('/api/offers', offerRoutes);
+app.use('/api/content', contentRoutes);
+app.use('/api/ai-servers', aiServerRoutes);
 
 // Admin Routes
 app.use('/api/admin/auth', adminAuthRoutes);

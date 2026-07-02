@@ -19,6 +19,7 @@
     "mysql2": "^3.22.5",
     "nodemailer": "^9.0.0",
     "openai": "^6.43.0",
+    "razorpay": "^2.9.6",
     "sequelize": "^6.37.8",
     "uuid": "^14.0.0"
   },

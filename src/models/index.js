@@ -14,6 +14,9 @@ import Document from './Document.js';
 import CustomerAgreement from './CustomerAgreement.js';
 import CustomerTimeline from './CustomerTimeline.js';
 import Notification from './Notification.js';
+import Offer from './Offer.js';
+import ContentBlock from './ContentBlock.js';
+import AiServer from './AiServer.js';
 
 // Existing Associations
 User.hasMany(Quote, { foreignKey: 'user_id', as: 'quotes' });
@@ -110,5 +113,8 @@ export {
   Document,
   CustomerAgreement,
   CustomerTimeline,
-  Notification
+  Notification,
+  Offer,
+  ContentBlock,
+  AiServer
 };

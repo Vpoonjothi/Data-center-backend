@@ -1,5 +1,68 @@
 import { Payment, Quote, Service, User, KycVerification, CustomerAgreement } from '../models/index.js';
 import { logAudit, logTimeline, sendNotification } from '../utils/auditService.js';
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+
+// Initialize Razorpay conditionally (can be dummy keys for now)
+const razorpayInstance = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID || 'dummy_key',
+  key_secret: process.env.RAZORPAY_KEY_SECRET || 'dummy_secret',
+});
+
+const provisionServiceForPayment = async (payment, quote, req) => {
+  // Service Provisioning (Dedicated Server, AI Server, Colocation, etc.)
+  let service = await Service.findOne({ where: { quote_id: quote.id } });
+  if (!service) {
+    const serviceName = `${quote.service_type.replace(/\s+/g, '')}-${Math.floor(Math.random() * 10000)}`;
+    const currentDate = new Date();
+    const nextDueDate = new Date();
+    nextDueDate.setDate(nextDueDate.getDate() + 30);
+
+    service = await Service.create({
+      user_id: payment.user_id,
+      quote_id: quote.id,
+      service_name: serviceName,
+      service_type: quote.service_type,
+      monthly_amount: quote.monthly_price,
+      status: 'Active',
+      purchase_date: currentDate,
+      start_date: currentDate,
+      next_due_date: nextDueDate
+    });
+  }
+
+  // Link service to payment
+  payment.service_id = service.id;
+  await payment.save();
+
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+
+  await logAudit({
+    action: 'PAYMENT_VERIFIED',
+    action_by_user_id: req.user.id,
+    target_user_id: payment.user_id,
+    entity_type: 'Payment',
+    entity_id: payment.id,
+    req,
+    details: { status: 'Verified', method: payment.payment_method }
+  });
+
+  await logTimeline({
+    user_id: payment.user_id,
+    admin_id: isAdmin ? req.user.id : null,
+    event_type: 'payment_verified',
+    event_title: 'Payment Verified',
+    event_description: `Payment for Quote #${quote.quote_number} has been verified and service is activated.`
+  });
+
+  await sendNotification({
+    user_id: payment.user_id,
+    title: 'Payment Verified & Service Activated',
+    message: `Your payment for Quote #${quote.quote_number} has been verified. Your service "${service.service_name}" is now active.`,
+    type: 'success',
+    channels: { dashboard: true, email: true }
+  });
+};
 
 export const getPaymentDetails = async (req, res) => {
   try {
@@ -231,56 +294,8 @@ export const verifyPayment = async (req, res) => {
       quote.status = 'paid';
       await quote.save();
 
-      // Service Provisioning (Dedicated Server, AI Server, Colocation, etc.)
-      let service = await Service.findOne({ where: { quote_id: quote.id } });
-      if (!service) {
-        const serviceName = `${quote.service_type.replace(/\s+/g, '')}-${Math.floor(Math.random() * 10000)}`;
-        const currentDate = new Date();
-        const nextDueDate = new Date();
-        nextDueDate.setDate(nextDueDate.getDate() + 30);
-
-        service = await Service.create({
-          user_id: payment.user_id,
-          quote_id: quote.id,
-          service_name: serviceName,
-          service_type: quote.service_type,
-          monthly_amount: quote.monthly_price,
-          status: 'Active',
-          purchase_date: currentDate,
-          start_date: currentDate,
-          next_due_date: nextDueDate
-        });
-      }
-
-      // Link service to payment
-      payment.service_id = service.id;
-      await payment.save();
-
-      await logAudit({
-        action: 'PAYMENT_VERIFIED',
-        action_by_user_id: req.user.id, // Admin
-        target_user_id: payment.user_id,
-        entity_type: 'Payment',
-        entity_id: payment.id,
-        req,
-        details: { status: 'Verified' }
-      });
-
-      await logTimeline({
-        user_id: payment.user_id,
-        admin_id: req.user.id,
-        event_type: 'payment_verified',
-        event_title: 'Payment Verified',
-        event_description: `Payment for Quote #${quote.quote_number} has been verified and service is activated.`
-      });
-
-      await sendNotification({
-        user_id: payment.user_id,
-        title: 'Payment Verified & Service Activated',
-        message: `Your payment for Quote #${quote.quote_number} has been verified. Your service "${service.service_name}" is now active.`,
-        type: 'success',
-        channels: { dashboard: true, email: true } // Mock email
-      });
+      // Provision Service using helper
+      await provisionServiceForPayment(payment, quote, req);
 
     } else if (status === 'Rejected') {
       const quote = payment.quote;
@@ -293,5 +308,114 @@ export const verifyPayment = async (req, res) => {
   } catch (error) {
     console.error('Verify payment error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// Razorpay: Create Order
+export const createRazorpayOrder = async (req, res) => {
+  try {
+    const { quoteId } = req.params;
+    
+    // First, save Customer Agreements
+    const { msaAccepted, tncAccepted, aupAccepted, privacyAccepted } = req.body;
+    if (!msaAccepted || !tncAccepted || !aupAccepted || !privacyAccepted) {
+      return res.status(400).json({ success: false, message: 'Agreements required' });
+    }
+
+    const quote = await Quote.findOne({ where: { id: quoteId, user_id: req.user.id } });
+    if (!quote) return res.status(404).json({ success: false, message: 'Quote not found' });
+    if (quote.status !== 'verified') return res.status(400).json({ success: false, message: 'Quote not verified' });
+
+    // Save agreements
+    await CustomerAgreement.create({
+      user_id: req.user.id,
+      quote_id: quote.id,
+      msa_accepted: msaAccepted,
+      tnc_accepted: tncAccepted,
+      aup_accepted: aupAccepted,
+      privacy_accepted: privacyAccepted,
+      ip_address: req.ip || req.headers['x-forwarded-for'],
+      browser_info: req.headers['user-agent'],
+      accepted_at: new Date()
+    });
+
+    const isDummy = (process.env.RAZORPAY_KEY_ID || 'dummy_key') === 'dummy_key';
+    
+    if (isDummy) {
+      // Return a fake order ID for the dummy flow
+      return res.json({
+        success: true,
+        data: { id: `dummy_order_${Math.floor(Math.random() * 1000000)}`, amount: quote.monthly_price * 100, currency: 'INR' },
+        isDummy: true
+      });
+    }
+
+    const options = {
+      amount: parseInt(quote.monthly_price * 100), // Amount in paise
+      currency: 'INR',
+      receipt: `receipt_quote_${quote.id}`
+    };
+
+    const order = await razorpayInstance.orders.create(options);
+    res.json({ success: true, data: order, isDummy: false, keyId: process.env.RAZORPAY_KEY_ID });
+  } catch (error) {
+    console.error('Create Razorpay order error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create payment order' });
+  }
+};
+
+// Razorpay: Verify Signature and Provision
+export const verifyRazorpayPayment = async (req, res) => {
+  try {
+    const { quoteId } = req.params;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, isDummy } = req.body;
+
+    const quote = await Quote.findOne({ where: { id: quoteId, user_id: req.user.id } });
+    if (!quote) return res.status(404).json({ success: false, message: 'Quote not found' });
+
+    if (!isDummy) {
+      const secret = process.env.RAZORPAY_KEY_SECRET;
+      const shasum = crypto.createHmac('sha256', secret);
+      shasum.update(`${razorpay_order_id}|${razorpay_payment_id}`);
+      const digest = shasum.digest('hex');
+
+      if (digest !== razorpay_signature) {
+        return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+      }
+    }
+
+    // Check Pre-requisites (KYC)
+    const kyc = await KycVerification.findOne({ where: { quote_id: quote.id, overall_status: 'verified' } });
+    if (!kyc) {
+      return res.status(403).json({ success: false, message: 'KYC must be verified before service activation.' });
+    }
+
+    // Payment is authentic or dummy succeeded
+    // 1. Create Verified Payment record
+    const payment = await Payment.create({
+      user_id: req.user.id,
+      quote_id: quote.id,
+      service_id: null,
+      amount: quote.monthly_price,
+      payment_date: new Date(),
+      transaction_reference: razorpay_payment_id || `DUMMY_TXN_${Math.floor(Math.random() * 100000)}`,
+      invoice_reference: razorpay_order_id,
+      payment_method: 'Razorpay',
+      status: 'Verified',
+      payment_terms_accepted: true,
+      payment_terms_accepted_at: new Date()
+    });
+
+    // 2. Update Quote Status
+    quote.status = 'paid';
+    await quote.save();
+
+    // 3. Provision Service
+    await provisionServiceForPayment(payment, quote, req);
+
+    res.json({ success: true, message: 'Payment successful and service activated!', data: payment });
+  } catch (error) {
+    console.error('Verify Razorpay payment error:', error);
+    res.status(500).json({ success: false, message: 'Server error during payment verification' });
   }
 };
