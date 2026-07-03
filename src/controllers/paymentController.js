@@ -87,7 +87,7 @@ export const getPaymentDetails = async (req, res) => {
       data: {
         quote_number: quote.quote_number,
         service_type: quote.service_type,
-        amount: quote.monthly_price,
+        amount: quote.grand_total,
         status: quote.status,
         billing_identity: kyc ? {
           customer_type: kyc.customer_type,
@@ -147,6 +147,8 @@ export const submitPaymentProof = async (req, res) => {
     let paymentScreenshotPath = null;
     if (req.file) {
       paymentScreenshotPath = `/uploads/payments/${req.user.id}/${req.file.filename}`;
+    } else if (payment_method === 'manual') {
+      return res.status(400).json({ success: false, message: 'Payment screenshot is required for manual bank transfers.' });
     }
 
     // 1. Create Payment Record (Pending Verification)
@@ -158,7 +160,7 @@ export const submitPaymentProof = async (req, res) => {
       // Wait, is service created before payment or after? The prompt says "Only then allow Service Activation".
       // I need to update Payment model to allow `service_id` to be null. I'll do that shortly.
       service_id: null, // Temporary, will be handled via migration
-      amount: quote.monthly_price,
+      amount: quote.grand_total,
       payment_date: payment_date || new Date(),
       transaction_reference: transactionRef,
       invoice_reference: invoice_reference || `INV-${quote.quote_number}`,
@@ -197,7 +199,7 @@ export const submitPaymentProof = async (req, res) => {
       entity_type: 'Payment',
       entity_id: payment.id,
       req,
-      details: { quote_id: quote.id, amount: quote.monthly_price }
+      details: { quote_id: quote.id, amount: quote.grand_total }
     });
 
     await logTimeline({
@@ -345,13 +347,13 @@ export const createRazorpayOrder = async (req, res) => {
       // Return a fake order ID for the dummy flow
       return res.json({
         success: true,
-        data: { id: `dummy_order_${Math.floor(Math.random() * 1000000)}`, amount: quote.monthly_price * 100, currency: 'INR' },
+        data: { id: `dummy_order_${Math.floor(Math.random() * 1000000)}`, amount: quote.grand_total * 100, currency: 'INR' },
         isDummy: true
       });
     }
 
     const options = {
-      amount: parseInt(quote.monthly_price * 100), // Amount in paise
+      amount: parseInt(quote.grand_total * 100), // Amount in paise
       currency: 'INR',
       receipt: `receipt_quote_${quote.id}`
     };
@@ -396,7 +398,7 @@ export const verifyRazorpayPayment = async (req, res) => {
       user_id: req.user.id,
       quote_id: quote.id,
       service_id: null,
-      amount: quote.monthly_price,
+      amount: quote.grand_total,
       payment_date: new Date(),
       transaction_reference: razorpay_payment_id || `DUMMY_TXN_${Math.floor(Math.random() * 100000)}`,
       invoice_reference: razorpay_order_id,

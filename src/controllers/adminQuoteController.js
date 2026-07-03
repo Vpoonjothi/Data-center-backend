@@ -1,7 +1,7 @@
 import Quote from '../models/Quote.js';
 import User from '../models/User.js';
 import Service from '../models/Service.js';
-import { calculateSubscriptionPricing } from '../utils/pricingCalculator.js';
+import { calculateSubscriptionPricing, calculateSubscriptionPricingFromFinal } from '../utils/pricingCalculator.js';
 
 // @desc    Get all quotes
 // @route   GET /api/admin/quotes
@@ -42,20 +42,29 @@ export const getQuoteById = async (req, res) => {
 // @access  Private (Admin)
 export const updateQuoteStatus = async (req, res) => {
   try {
-    const { status, monthly_price, notes, renewal_type } = req.body;
+    const { status, monthly_price, final_amount, notes, renewal_type } = req.body;
     const quote = await Quote.findByPk(req.params.id);
     if (!quote) {
       return res.status(404).json({ success: false, message: 'Quote not found' });
     }
     
     quote.status = status;
-    if (monthly_price !== undefined) {
+    
+    // Support either final_amount (new UI flow) or monthly_price (legacy)
+    if (final_amount !== undefined) {
+      const pricing = calculateSubscriptionPricingFromFinal(final_amount, quote.duration_value, quote.duration_unit);
+      quote.monthly_price = pricing.monthlySubscription;
+      quote.subtotal_price = pricing.contractValue;
+      quote.gst_amount = pricing.gstAmount;
+      quote.grand_total = pricing.totalPayable;
+    } else if (monthly_price !== undefined) {
       const pricing = calculateSubscriptionPricing(monthly_price, quote.duration_value, quote.duration_unit);
       quote.monthly_price = pricing.monthlySubscription;
       quote.subtotal_price = pricing.contractValue;
       quote.gst_amount = pricing.gstAmount;
       quote.grand_total = pricing.totalPayable;
     }
+
     if (notes !== undefined) {
       quote.notes = notes;
     }

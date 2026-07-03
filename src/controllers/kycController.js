@@ -1,6 +1,7 @@
 import { KycVerification, Quote, Document } from '../models/index.js';
 import crypto from 'crypto';
 import { logAudit, logTimeline, sendNotification } from '../utils/auditService.js';
+import * as quickekycService from '../services/quickekycService.js';
 
 // @desc    Get KYC status for a quote
 // @route   GET /api/kyc/status/:quoteId
@@ -77,12 +78,12 @@ const updateOverallStatus = async (kyc) => {
   }
 };
 
-// @desc    Start Aadhaar Verification (Mock)
+// @desc    Start Aadhaar Verification (Integrated with QuickeKYC)
 // @route   POST /api/kyc/aadhaar/start
 // @access  Private
 export const startAadhaarVerification = async (req, res) => {
   try {
-    const { quoteId, kycConsent } = req.body;
+    const { quoteId, kycConsent, otp, aadhaarNumber } = req.body;
     let kyc = await KycVerification.findOne({ where: { quote_id: quoteId, user_id: req.user.id } });
 
     if (!kyc) {
@@ -94,16 +95,48 @@ export const startAadhaarVerification = async (req, res) => {
       kyc.kyc_consent_at = new Date();
     }
 
-    // Mock API Success
-    kyc.aadhaar_status = 'verified';
-    kyc.aadhaar_reference_id = `ADH-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    await updateOverallStatus(kyc);
-    await kyc.save();
+    if (!otp) {
+      // Step 1: Generate OTP
+      if (!aadhaarNumber) {
+        return res.status(400).json({ success: false, message: 'Aadhaar number is required for verification' });
+      }
 
-    res.json({ success: true, message: 'Aadhaar verified successfully', data: kyc });
+      const otpRes = await quickekycService.generateOtp(aadhaarNumber);
+      
+      // Store aadhaar number and request_id after success
+      if (kyc.customer_type === 'company' || (aadhaarNumber.length === 12 && req.body.customerType === 'company')) {
+        kyc.auth_aadhaar_number = aadhaarNumber;
+      } else {
+        kyc.aadhaar_number = aadhaarNumber;
+      }
+      kyc.aadhaar_reference_id = otpRes.requestId;
+      await kyc.save();
+
+      // Return the updated kyc data without marking it verified yet
+      return res.json({ success: true, message: 'OTP sent to mobile number', data: kyc });
+    } else {
+      // Step 2: Submit OTP
+      const requestId = kyc.aadhaar_reference_id;
+      if (!requestId) {
+        return res.status(400).json({ success: false, message: 'No pending OTP request found' });
+      }
+
+      const verifyRes = await quickekycService.submitOtp(requestId, otp);
+
+      if (verifyRes.verified) {
+        kyc.aadhaar_status = 'verified';
+        await updateOverallStatus(kyc);
+        await kyc.save();
+
+        return res.json({ success: true, message: 'Aadhaar verified successfully', data: kyc });
+      } else {
+        return res.status(400).json({ success: false, message: 'Invalid OTP provided' });
+      }
+    }
   } catch (error) {
-    console.error('Aadhaar verification error:', error);
-    res.status(500).json({ success: false, message: 'Server error during Aadhaar verification' });
+    // Ensure sensitive information is never logged
+    console.error('Aadhaar verification error:', error.message || 'Unknown error');
+    res.status(500).json({ success: false, message: error.message || 'Server error during Aadhaar verification' });
   }
 };
 
@@ -168,7 +201,20 @@ export const submitKyc = async (req, res) => {
       if (req.files.address_proof) kyc.address_proof_path = req.files.address_proof[0].filename;
     }
 
-    kyc.overall_status = 'under_review';
+    // Instead of always setting 'under_review', check if Aadhaar was already verified
+    if (kyc.aadhaar_status === 'verified') {
+      kyc.overall_status = 'verified';
+      kyc.verified_at = new Date();
+      
+      const quote = await Quote.findByPk(kyc.quote_id);
+      if (quote && (quote.status === 'verification_pending' || quote.status === 'quoted')) {
+        quote.status = 'verified';
+        await quote.save();
+      }
+    } else {
+      kyc.overall_status = 'under_review';
+    }
+    
     kyc.submitted_at = new Date();
     await kyc.save();
 
