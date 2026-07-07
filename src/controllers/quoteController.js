@@ -1,4 +1,4 @@
-import { Quote } from '../models/index.js';
+import { Quote, Enquiry } from '../models/index.js';
 import { calculateSubscriptionPricing } from '../utils/pricingCalculator.js';
 
 export const createQuote = async (req, res) => {
@@ -50,6 +50,9 @@ export const getMyQuotes = async (req, res) => {
   try {
     const quotes = await Quote.findAll({
       where: { user_id: req.user.id },
+      include: [
+        { model: Enquiry, as: 'enquiry' }
+      ],
       order: [['createdAt', 'DESC']]
     });
 

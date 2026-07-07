@@ -83,7 +83,7 @@ const updateOverallStatus = async (kyc) => {
 // @access  Private
 export const startAadhaarVerification = async (req, res) => {
   try {
-    const { quoteId, kycConsent, otp, aadhaarNumber } = req.body;
+    const { quoteId, kycConsent, otp, aadhaarNumber, customerDetails, customerType } = req.body;
     let kyc = await KycVerification.findOne({ where: { quote_id: quoteId, user_id: req.user.id } });
 
     if (!kyc) {
@@ -104,11 +104,20 @@ export const startAadhaarVerification = async (req, res) => {
       const otpRes = await quickekycService.generateOtp(aadhaarNumber);
       
       // Store aadhaar number and request_id after success
-      if (kyc.customer_type === 'company' || (aadhaarNumber.length === 12 && req.body.customerType === 'company')) {
+      if (kyc.customer_type === 'company' || (aadhaarNumber.length === 12 && customerType === 'company')) {
         kyc.auth_aadhaar_number = aadhaarNumber;
       } else {
         kyc.aadhaar_number = aadhaarNumber;
       }
+      
+      // Save customer details early
+      if (customerType) kyc.customer_type = customerType;
+      if (customerDetails) {
+        for (const key of Object.keys(customerDetails)) {
+          kyc[key] = customerDetails[key] || null;
+        }
+      }
+      
       kyc.aadhaar_reference_id = otpRes.requestId;
       await kyc.save();
 

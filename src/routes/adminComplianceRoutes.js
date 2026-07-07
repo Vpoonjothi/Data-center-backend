@@ -1,10 +1,10 @@
 import express from 'express';
 import { getComplianceLogs, getAuditLogs } from '../controllers/adminComplianceController.js';
-import { isAdmin } from '../middleware/isAdmin.js';
+import { isRegularAdmin } from '../middleware/isRegularAdmin.js';
 
 const router = express.Router();
 
-router.route('/logs').get(isAdmin, getComplianceLogs);
-router.route('/audit-logs').get(isAdmin, getAuditLogs);
+router.route('/logs').get(isRegularAdmin, getComplianceLogs);
+router.route('/audit-logs').get(isRegularAdmin, getAuditLogs);
 
 export default router;

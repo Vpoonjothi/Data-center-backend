@@ -1,5 +1,5 @@
 import express from 'express';
-import { submitPaymentProof, getPaymentDetails, getMyPayments, createRazorpayOrder, verifyRazorpayPayment } from '../controllers/paymentController.js';
+import { submitPaymentProof, getPaymentDetails, getMyPayments, createRazorpayOrder, verifyRazorpayPayment, createServiceRenewalOrder, verifyServiceRenewalPayment } from '../controllers/paymentController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { upload } from '../middleware/uploadMiddleware.js';
 
@@ -16,6 +16,13 @@ router.route('/:quoteId/razorpay/create-order')
 
 router.route('/:quoteId/razorpay/verify')
   .post(protect, verifyRazorpayPayment);
+
+// Service Renewal Routes
+router.route('/service/:serviceId/razorpay/create-order')
+  .post(protect, createServiceRenewalOrder);
+
+router.route('/service/:serviceId/razorpay/verify')
+  .post(protect, verifyServiceRenewalPayment);
 
 router.route('/my-payments')
   .get(protect, getMyPayments);

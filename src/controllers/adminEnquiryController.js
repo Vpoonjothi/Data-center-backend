@@ -71,14 +71,6 @@ export const getEnquiryById = async (req, res) => {
       userStats = { totalEnquiries, totalQuotes };
     }
     
-    // Add an access-log for admin viewing the enquiry
-    await EnquiryLog.create({
-      enquiry_id: enquiry.id,
-      user_id: req.admin.id,
-      action: 'Viewed Enquiry Details',
-      details: `Admin ${req.admin.name} viewed the enquiry details page.`
-    });
-
     // To prevent the access log from continuously mutating state and triggering refetches infinitely if poorly handled on frontend,
     // we only create the log but don't strictly need to append it to the returned object if it's just 'viewed'.
 
@@ -229,7 +221,7 @@ export const deleteEnquiryNote = async (req, res) => {
 export const generateQuoteFromEnquiry = async (req, res) => {
   const transaction = await sequelize.transaction();
   try {
-    const { amount, billingCycle, validityDays, adminNotes } = req.body;
+    const { unitPrice, quantity, discountAmount, validityDays, adminNotes } = req.body;
     const enquiryId = req.params.id;
 
     const enquiry = await Enquiry.findByPk(enquiryId, { transaction });
@@ -238,22 +230,26 @@ export const generateQuoteFromEnquiry = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Enquiry not found' });
     }
     
-    const { calculateSubscriptionPricing } = await import('../utils/pricingCalculator.js');
-    const pricing = calculateSubscriptionPricing(amount, 1, 'Months');
+    const { calculateQuotePricing } = await import('../utils/quotePricing.js');
+    const pricing = calculateQuotePricing(unitPrice, quantity, discountAmount, 18);
 
     const newQuote = await Quote.create({
       user_id: enquiry.user_id || null,
       enquiry_id: enquiry.id,
       service_type: enquiry.type.replace('_', ' ').toUpperCase(),
-      monthly_price: pricing.monthlySubscription,
-      subtotal_price: pricing.contractValue,
+      monthly_price: pricing.unitPrice,
+      unit_price: pricing.unitPrice,
+      quantity: pricing.quantity,
+      subtotal: pricing.subtotal,
+      discount_amount: pricing.discountAmount,
+      taxable_amount: pricing.taxableAmount,
+      gst_percentage: pricing.gstPercentage,
       gst_amount: pricing.gstAmount,
-      grand_total: pricing.totalPayable,
+      grand_total: pricing.grandTotal,
       duration_value: 1,
       duration_unit: 'Months',
       notes: adminNotes,
       status: 'quoted'
-      // Store billingCycle and validityDays in JSON or extra fields if we had them.
     }, { transaction });
 
     enquiry.status = 'Quoted';
@@ -263,7 +259,7 @@ export const generateQuoteFromEnquiry = async (req, res) => {
       enquiry_id: enquiry.id,
       user_id: req.admin.id,
       action: 'Quote Generated',
-      details: `Quote created for $${amount} / ${billingCycle}. Validity: ${validityDays} days.`
+      details: `Quote created for ₹${pricing.grandTotal}. Validity: ${validityDays} days.`
     }, { transaction });
 
     await transaction.commit();

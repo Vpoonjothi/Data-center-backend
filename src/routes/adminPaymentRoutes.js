@@ -1,10 +1,10 @@
 import express from 'express';
 import { getAdminPayments, verifyPayment } from '../controllers/paymentController.js';
-import { isAdmin } from '../middleware/isAdmin.js';
+import { isRegularAdmin } from '../middleware/isRegularAdmin.js';
 
 const router = express.Router();
 
-router.use(isAdmin);
+router.use(isRegularAdmin);
 
 router.route('/')
   .get(getAdminPayments);

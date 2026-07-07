@@ -1,6 +1,8 @@
 import User from '../models/User.js';
 import { matchPassword } from '../utils/passwordHelper.js';
 import { generateToken } from '../utils/generateToken.js';
+import { dispatchNotification } from '../utils/notificationDispatcher.js';
+import Admin from '../models/Admin.js';
 
 export const registerUser = async (userData) => {
   const { name, email, phone, password, terms } = userData;
@@ -23,6 +25,39 @@ export const registerUser = async (userData) => {
     terms_accepted_at: new Date(),
   });
 
+  // 1. Notify Customer (Welcome)
+  await dispatchNotification({
+    userId: user.id,
+    userType: 'customer',
+    category: 'Account',
+    priority: 'low',
+    title: 'Welcome to GreenLeaf Data Center!',
+    message: 'Thank you for creating an account with us. You can now request quotes and manage your services.',
+    relatedModule: 'User',
+    relatedRecordId: user.id,
+    actionUrl: '/dashboard/profile',
+    sendEmailFlag: true,
+    actionText: 'Complete Your Profile'
+  });
+
+  // 2. Notify all Admins
+  const admins = await Admin.findAll();
+  for (const admin of admins) {
+    await dispatchNotification({
+      userId: admin.id,
+      userType: 'admin',
+      category: 'Account',
+      priority: 'medium',
+      title: 'New Customer Registration',
+      message: `${name} (${email}) has just registered a new account.`,
+      relatedModule: 'User',
+      relatedRecordId: user.id,
+      actionUrl: `/admin/users/${user.id}`,
+      sendEmailFlag: true,
+      actionText: 'View Customer Profile'
+    });
+  }
+
   return {
     success: true,
     message: 'Account created successfully',
@@ -40,6 +75,23 @@ export const loginUser = async (email, password) => {
 
     const userObj = user.toJSON();
     delete userObj.password;
+
+    // Notify all Admins that user logged in
+    const admins = await Admin.findAll();
+    for (const admin of admins) {
+      await dispatchNotification({
+        userId: admin.id,
+        userType: 'admin',
+        category: 'System',
+        priority: 'low',
+        title: 'Customer Logged In',
+        message: `${user.name} (${user.email}) has just logged into the portal.`,
+        relatedModule: 'User',
+        relatedRecordId: user.id,
+        actionUrl: `/admin/users/${user.id}`,
+        sendEmailFlag: false
+      });
+    }
 
     return {
       success: true,

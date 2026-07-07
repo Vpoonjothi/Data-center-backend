@@ -1,10 +1,10 @@
 import express from 'express';
 import { getAdminKycVerifications, getAdminKycVerificationById, updateAdminKycVerificationStatus, updateAdminKycDocumentStatus, getAdminKycDocument } from '../controllers/adminKycController.js';
-import { isAdmin } from '../middleware/isAdmin.js';
+import { isRegularAdmin } from '../middleware/isRegularAdmin.js';
 
 const router = express.Router();
 
-router.use(isAdmin);
+router.use(isRegularAdmin);
 
 router.route('/')
   .get(getAdminKycVerifications);

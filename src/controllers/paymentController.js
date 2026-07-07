@@ -1,5 +1,7 @@
 import { Payment, Quote, Service, User, KycVerification, CustomerAgreement } from '../models/index.js';
 import { logAudit, logTimeline, sendNotification } from '../utils/auditService.js';
+import { dispatchLifecycleNotification } from '../utils/notificationEngine.js';
+import { generateInvoicePDF } from '../utils/invoiceGenerator.js';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 
@@ -419,5 +421,135 @@ export const verifyRazorpayPayment = async (req, res) => {
   } catch (error) {
     console.error('Verify Razorpay payment error:', error);
     res.status(500).json({ success: false, message: 'Server error during payment verification' });
+  }
+};
+
+// ==========================================
+// RENEWAL & REACTIVATION FLOW
+// ==========================================
+
+export const createServiceRenewalOrder = async (req, res) => {
+  try {
+    const { serviceId } = req.params;
+    const service = await Service.findOne({ where: { id: serviceId, user_id: req.user.id } });
+    
+    if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
+    
+    const isDummy = (process.env.RAZORPAY_KEY_ID || 'dummy_key') === 'dummy_key';
+    
+    if (isDummy) {
+      return res.json({
+        success: true,
+        data: { id: `dummy_order_renew_${Math.floor(Math.random() * 1000000)}`, amount: service.monthly_amount * 100, currency: 'INR' },
+        isDummy: true
+      });
+    }
+
+    const options = {
+      amount: parseInt(service.monthly_amount * 100),
+      currency: 'INR',
+      receipt: `receipt_renew_${service.id}`
+    };
+
+    const order = await razorpayInstance.orders.create(options);
+    res.json({ success: true, data: order, isDummy: false, keyId: process.env.RAZORPAY_KEY_ID });
+  } catch (error) {
+    console.error('Create renewal order error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create renewal order' });
+  }
+};
+
+export const verifyServiceRenewalPayment = async (req, res) => {
+  try {
+    const { serviceId } = req.params;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, isDummy } = req.body;
+
+    const service = await Service.findOne({ 
+      where: { id: serviceId, user_id: req.user.id },
+      include: [{ model: User, as: 'user' }]
+    });
+    
+    if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
+
+    if (!isDummy) {
+      const secret = process.env.RAZORPAY_KEY_SECRET;
+      const shasum = crypto.createHmac('sha256', secret);
+      shasum.update(`${razorpay_order_id}|${razorpay_payment_id}`);
+      const digest = shasum.digest('hex');
+      if (digest !== razorpay_signature) return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+    }
+
+    // 1. Create Verified Payment record
+    const payment = await Payment.create({
+      user_id: req.user.id,
+      quote_id: service.quote_id, // Link to original quote if needed
+      service_id: service.id,
+      amount: service.monthly_amount,
+      payment_date: new Date(),
+      transaction_reference: razorpay_payment_id || `DUMMY_RENEW_TXN_${Math.floor(Math.random() * 100000)}`,
+      invoice_reference: razorpay_order_id || `INV-RNW-${Date.now()}`,
+      payment_method: 'Razorpay',
+      status: 'Verified',
+      payment_terms_accepted: true,
+      payment_terms_accepted_at: new Date()
+    });
+
+    // 2. Generate PDF Invoice
+    const quoteForInvoice = await Quote.findByPk(service.quote_id);
+    const invoiceUrl = await generateInvoicePDF(payment, service.user, service, quoteForInvoice);
+    if (invoiceUrl) {
+      payment.payment_screenshot = invoiceUrl; // Storing invoice URL in this field for easy download
+      await payment.save();
+    }
+
+    // 3. Extend Next Due Date
+    const currentDueDate = new Date(service.next_due_date);
+    const today = new Date();
+    // If it's already expired/suspended, renew from TODAY. Otherwise, add 1 month to the existing due date.
+    if (currentDueDate < today) {
+      currentDueDate.setTime(today.getTime());
+    }
+    currentDueDate.setMonth(currentDueDate.getMonth() + 1);
+    service.next_due_date = currentDueDate;
+    
+    // 4. Automatic Reactivation Logic
+    const oldStatus = service.status;
+    let wasSuspended = false;
+    if (service.status === 'Suspended' || service.status === 'Expired') {
+      service.status = 'Active';
+      wasSuspended = (oldStatus === 'Suspended');
+    }
+    
+    await service.save();
+
+    // 5. Notify & Log
+    if (wasSuspended) {
+      await dispatchLifecycleNotification(service.user, service, 'reactivated', 0);
+      await logAudit({
+        action: 'Automated Server Reactivation',
+        action_by_user_id: req.user.id,
+        target_user_id: req.user.id,
+        entity_type: 'Service',
+        entity_id: service.id,
+        req,
+        details: { old_status: oldStatus, new_due_date: currentDueDate }
+      });
+    }
+
+    await logTimeline({
+      user_id: req.user.id,
+      event_type: 'subscription_renewed',
+      event_title: 'Subscription Renewed',
+      event_description: `Successfully renewed service "${service.service_name}" until ${currentDueDate.toLocaleDateString()}`
+    });
+
+    res.json({ 
+      success: true, 
+      message: wasSuspended ? 'Payment successful! Server has been reactivated.' : 'Subscription renewed successfully!', 
+      data: { payment, service } 
+    });
+  } catch (error) {
+    console.error('Verify renewal payment error:', error);
+    res.status(500).json({ success: false, message: 'Server error during renewal verification' });
   }
 };

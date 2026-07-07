@@ -1,10 +1,10 @@
 import express from 'express';
 import { getUsers, getUserById, updateUserStatus, deleteUser } from '../controllers/adminUserController.js';
-import { isAdmin } from '../middleware/isAdmin.js';
+import { isRegularAdmin } from '../middleware/isRegularAdmin.js';
 
 const router = express.Router();
 
-router.use(isAdmin); // Protect all routes in this file
+router.use(isRegularAdmin); // Protect all routes in this file
 
 router.route('/')
   .get(getUsers);

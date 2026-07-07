@@ -22,12 +22,17 @@ import adminComplianceRoutes from './routes/adminComplianceRoutes.js';
 import offerRoutes from './routes/offerRoutes.js';
 import contentRoutes from './routes/contentRoutes.js';
 import aiServerRoutes from './routes/aiServerRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
+import adminManagementRoutes from './routes/adminManagementRoutes.js';
+import adminNotificationRoutes from './routes/adminNotificationRoutes.js';
+import adminDashboardRoutes from './routes/adminDashboardRoutes.js';
+import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 
 const app = express();
 
 // Middlewares
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cors());
 app.use(helmet());
 app.use(compression());
@@ -48,6 +53,7 @@ app.use('/api/admin/kyc', adminKycRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/ai-servers', aiServerRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Admin Routes
 app.use('/api/admin/auth', adminAuthRoutes);
@@ -58,6 +64,10 @@ app.use('/api/admin/verifications', adminVerificationRoutes);
 app.use('/api/admin/services', adminServiceRoutes);
 app.use('/api/admin/payments', adminPaymentRoutes);
 app.use('/api/admin/compliance', adminComplianceRoutes);
+app.use('/api/admin/admins', adminManagementRoutes);
+app.use('/api/admin/notifications', adminNotificationRoutes);
+app.use('/api/admin/dashboard', adminDashboardRoutes);
+app.use('/api/admin/settings', adminSettingsRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

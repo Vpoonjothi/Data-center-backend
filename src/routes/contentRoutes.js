@@ -1,7 +1,7 @@
 import express from 'express';
 const router = express.Router();
 import { ContentBlock } from '../models/index.js';
-import { isAdmin } from '../middleware/isAdmin.js';
+import { isRegularAdmin } from '../middleware/isRegularAdmin.js';
 
 // GET all content blocks (Public)
 router.get('/', async (req, res) => {
@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST create a new content block (Admin only)
-router.post('/', isAdmin, async (req, res) => {
+router.post('/', isRegularAdmin, async (req, res) => {
     try {
         const { key, type, value } = req.body;
         if (!key || !value) {
@@ -41,7 +41,7 @@ router.post('/', isAdmin, async (req, res) => {
 });
 
 // PUT update a content block (Admin only)
-router.put('/:id', isAdmin, async (req, res) => {
+router.put('/:id', isRegularAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { key, type, value } = req.body;
@@ -70,7 +70,7 @@ router.put('/:id', isAdmin, async (req, res) => {
 });
 
 // DELETE a content block (Admin only)
-router.delete('/:id', isAdmin, async (req, res) => {
+router.delete('/:id', isRegularAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const block = await ContentBlock.findByPk(id);

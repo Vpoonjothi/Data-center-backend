@@ -5,11 +5,11 @@ import {
   getVerificationDocument, 
   updateVerificationStatus 
 } from '../controllers/adminVerificationController.js';
-import { isAdmin } from '../middleware/isAdmin.js';
+import { isRegularAdmin } from '../middleware/isRegularAdmin.js';
 
 const router = express.Router();
 
-router.use(isAdmin);
+router.use(isRegularAdmin);
 
 router.get('/', getVerifications);
 router.get('/:id', getVerificationById);

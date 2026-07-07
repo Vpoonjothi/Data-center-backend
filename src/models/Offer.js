@@ -22,6 +22,32 @@ const Offer = sequelize.define('Offer', {
     min_ram: {
         type: DataTypes.INTEGER,
         allowNull: false,
+    },
+    product_category: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: 'Enterprise Servers'
+    },
+    status: {
+        type: DataTypes.ENUM('Active', 'Scheduled', 'Expired', 'Draft'),
+        allowNull: false,
+        defaultValue: 'Draft'
+    },
+    start_date: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
+    end_date: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
+    description: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+    },
+    image_url: {
+        type: DataTypes.STRING,
+        allowNull: true,
     }
 }, {
     tableName: 'offers',

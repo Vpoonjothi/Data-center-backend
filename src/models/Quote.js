@@ -72,9 +72,32 @@ const Quote = sequelize.define('Quote', {
     type: DataTypes.STRING,
     allowNull: true,
   },
-  subtotal_price: {
+  quantity: {
+    type: DataTypes.INTEGER,
+    defaultValue: 1,
+    allowNull: false,
+  },
+  unit_price: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true,
+  },
+  subtotal: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+  },
+  discount_amount: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0.00,
+    allowNull: false,
+  },
+  taxable_amount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+  },
+  gst_percentage: {
+    type: DataTypes.DECIMAL(5, 2),
+    defaultValue: 18.00,
+    allowNull: false,
   },
   gst_amount: {
     type: DataTypes.DECIMAL(10, 2),
@@ -100,9 +123,9 @@ const Quote = sequelize.define('Quote', {
   timestamps: true,
   hooks: {
     beforeCreate: (quote) => {
-      // Generate a unique quote number (e.g., QT-000001)
-      const randomPart = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-      quote.quote_number = `QT-${randomPart}`;
+      const year = new Date().getFullYear();
+      const randomPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      quote.quote_number = `QT-${randomPart}-${year}`;
     }
   }
 });

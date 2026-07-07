@@ -17,6 +17,7 @@ import Notification from './Notification.js';
 import Offer from './Offer.js';
 import ContentBlock from './ContentBlock.js';
 import AiServer from './AiServer.js';
+import SystemSetting from './SystemSetting.js';
 
 // Existing Associations
 User.hasMany(Quote, { foreignKey: 'user_id', as: 'quotes' });
@@ -94,8 +95,11 @@ User.hasMany(CustomerTimeline, { foreignKey: 'user_id', as: 'timeline_events' })
 CustomerTimeline.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 // Notification Associations
-User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
-Notification.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications', onDelete: 'CASCADE' });
+Notification.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
+
+Admin.hasMany(Notification, { foreignKey: 'admin_id', as: 'notifications', onDelete: 'CASCADE' });
+Notification.belongsTo(Admin, { foreignKey: 'admin_id', as: 'admin', onDelete: 'CASCADE' });
 
 export {
   User,
@@ -116,5 +120,6 @@ export {
   Notification,
   Offer,
   ContentBlock,
-  AiServer
+  AiServer,
+  SystemSetting
 };

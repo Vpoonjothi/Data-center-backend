@@ -1,7 +1,7 @@
 import express from 'express';
 const router = express.Router();
 import { AiServer } from '../models/index.js';
-import { isAdmin } from '../middleware/isAdmin.js';
+import { isRegularAdmin } from '../middleware/isRegularAdmin.js';
 
 // GET all AI servers (Public)
 router.get('/', async (req, res) => {
@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET all AI servers (Admin - includes inactive)
-router.get('/admin', isAdmin, async (req, res) => {
+router.get('/admin', isRegularAdmin, async (req, res) => {
     try {
         const servers = await AiServer.findAll({
             order: [['monthly_price', 'ASC']]
@@ -31,7 +31,7 @@ router.get('/admin', isAdmin, async (req, res) => {
 });
 
 // POST create a new AI server (Admin only)
-router.post('/', isAdmin, async (req, res) => {
+router.post('/', isRegularAdmin, async (req, res) => {
     try {
         const { name, monthly_price, cpu, ram, storage, gpu, network, support, is_active } = req.body;
         const newServer = await AiServer.create({
@@ -45,7 +45,7 @@ router.post('/', isAdmin, async (req, res) => {
 });
 
 // PUT update an AI server (Admin only)
-router.put('/:id', isAdmin, async (req, res) => {
+router.put('/:id', isRegularAdmin, async (req, res) => {
     try {
         const server = await AiServer.findByPk(req.params.id);
         if (!server) {
@@ -60,7 +60,7 @@ router.put('/:id', isAdmin, async (req, res) => {
 });
 
 // DELETE an AI server (Admin only)
-router.delete('/:id', isAdmin, async (req, res) => {
+router.delete('/:id', isRegularAdmin, async (req, res) => {
     try {
         const server = await AiServer.findByPk(req.params.id);
         if (!server) {

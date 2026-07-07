@@ -8,11 +8,11 @@ import {
   deleteEnquiryNote,
   generateQuoteFromEnquiry
 } from '../controllers/adminEnquiryController.js';
-import { isAdmin } from '../middleware/isAdmin.js';
+import { isRegularAdmin } from '../middleware/isRegularAdmin.js';
 
 const router = express.Router();
 
-router.use(isAdmin); // Protect all routes in this file
+router.use(isRegularAdmin); // Protect all routes in this file
 
 router.route('/')
   .get(getEnquiries);
