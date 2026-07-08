@@ -54,13 +54,13 @@ const provisionServiceForPayment = async (payment, quote, req) => {
     admin_id: isAdmin ? req.user.id : null,
     event_type: 'payment_verified',
     event_title: 'Payment Verified',
-    event_description: `Payment for Quote #${quote.quote_number} has been verified and service is activated.`
+    event_description: `Payment for Quote ${quote.quote_number} has been verified and service is activated.`
   });
 
   await sendNotification({
     user_id: payment.user_id,
     title: 'Payment Verified & Service Activated',
-    message: `Your payment for Quote #${quote.quote_number} has been verified. Your service "${service.service_name}" is now active.`,
+    message: `Your payment for Quote ${quote.quote_number} has been verified. Your service "${service.service_name}" is now active.`,
     type: 'success',
     channels: { dashboard: true, email: true }
   });
@@ -208,7 +208,7 @@ export const submitPaymentProof = async (req, res) => {
       user_id: req.user.id,
       event_type: 'payment_submission',
       event_title: 'Payment Submitted',
-      event_description: `Payment proof uploaded for Quote #${quote.quote_number}.`
+      event_description: `Payment proof uploaded for Quote ${quote.quote_number}.`
     });
 
     res.status(200).json({

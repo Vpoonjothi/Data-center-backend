@@ -25,8 +25,8 @@ export const registerUser = async (userData) => {
     terms_accepted_at: new Date(),
   });
 
-  // 1. Notify Customer (Welcome)
-  await dispatchNotification({
+  // 1. Notify Customer (Welcome) - Fire and forget to prevent delay
+  dispatchNotification({
     userId: user.id,
     userType: 'customer',
     category: 'Account',
@@ -38,12 +38,12 @@ export const registerUser = async (userData) => {
     actionUrl: '/dashboard/profile',
     sendEmailFlag: true,
     actionText: 'Complete Your Profile'
-  });
+  }).catch(console.error);
 
-  // 2. Notify all Admins
+  // 2. Notify all Admins - Fire and forget to prevent delay
   const admins = await Admin.findAll();
-  for (const admin of admins) {
-    await dispatchNotification({
+  admins.forEach(admin => {
+    dispatchNotification({
       userId: admin.id,
       userType: 'admin',
       category: 'Account',
@@ -55,8 +55,8 @@ export const registerUser = async (userData) => {
       actionUrl: `/admin/users/${user.id}`,
       sendEmailFlag: true,
       actionText: 'View Customer Profile'
-    });
-  }
+    }).catch(console.error);
+  });
 
   return {
     success: true,
@@ -76,10 +76,10 @@ export const loginUser = async (email, password) => {
     const userObj = user.toJSON();
     delete userObj.password;
 
-    // Notify all Admins that user logged in
+    // Notify all Admins that user logged in - Fire and forget
     const admins = await Admin.findAll();
-    for (const admin of admins) {
-      await dispatchNotification({
+    admins.forEach(admin => {
+      dispatchNotification({
         userId: admin.id,
         userType: 'admin',
         category: 'System',
@@ -90,8 +90,8 @@ export const loginUser = async (email, password) => {
         relatedRecordId: user.id,
         actionUrl: `/admin/users/${user.id}`,
         sendEmailFlag: false
-      });
-    }
+      }).catch(console.error);
+    });
 
     return {
       success: true,

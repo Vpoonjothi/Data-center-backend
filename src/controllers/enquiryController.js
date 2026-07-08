@@ -33,10 +33,10 @@ export const submitEnquiry = async (req, res) => {
       user_id: req.user ? req.user.id : null, // If logged in, attach user
     });
 
-    // Notify all admins via centralized dispatcher
+    // Notify all admins via centralized dispatcher (Fire and forget)
     const admins = await Admin.findAll();
-    for (const admin of admins) {
-      await dispatchNotification({
+    admins.forEach(admin => {
+      dispatchNotification({
         userId: admin.id,
         userType: 'admin',
         category: 'Sales Requests',
@@ -48,8 +48,8 @@ export const submitEnquiry = async (req, res) => {
         actionUrl: `/admin/enquiries/${newEnquiry.id}`,
         sendEmailFlag: true,
         actionText: 'View Request'
-      });
-    }
+      }).catch(console.error);
+    });
 
     res.status(201).json({
       success: true,
