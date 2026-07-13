@@ -3,6 +3,12 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 import authRoutes from './routes/authRoutes.js';
 import quoteRoutes from './routes/quoteRoutes.js';
 import enquiryRoutes from './routes/enquiryRoutes.js';
@@ -30,10 +36,45 @@ import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 
 const app = express();
 
-// Middlewares
+/* ---------------- CORS Configuration ---------------- */
+
+const allowedOrigins = [
+  'https://greenleafagencies.com',
+  'https://www.greenleafagencies.com',
+  'https://api.greenleafagencies.com',
+  process.env.FRONTEND_URL || 'http://localhost:5173'
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow Postman, curl, server-to-server requests
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error('CORS policy: Origin not allowed'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Origin',
+      'X-Requested-With',
+      'Content-Type',
+      'Accept',
+      'Authorization'
+    ]
+  })
+);
+
+/* ---------------- Middlewares ---------------- */
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(cors());
 app.use(helmet());
 app.use(compression());
 
@@ -41,7 +82,12 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Routes
+/* ---------------- Static Files ---------------- */
+
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+/* ---------------- API Routes ---------------- */
+
 app.use('/api/auth', authRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/enquiries', enquiryRoutes);
@@ -55,7 +101,8 @@ app.use('/api/content', contentRoutes);
 app.use('/api/ai-servers', aiServerRoutes);
 app.use('/api/notifications', notificationRoutes);
 
-// Admin Routes
+/* ---------------- Admin Routes ---------------- */
+
 app.use('/api/admin/auth', adminAuthRoutes);
 app.use('/api/admin/users', adminUserRoutes);
 app.use('/api/admin/enquiries', adminEnquiryRoutes);
@@ -69,17 +116,23 @@ app.use('/api/admin/notifications', adminNotificationRoutes);
 app.use('/api/admin/dashboard', adminDashboardRoutes);
 app.use('/api/admin/settings', adminSettingsRoutes);
 
-// Health check
+/* ---------------- Health Check ---------------- */
+
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'NexaCore Backend is running' });
+  res.status(200).json({
+    status: 'ok',
+    message: 'NexaCore Backend is running'
+  });
 });
 
-// Global Error Handler
+/* ---------------- Global Error Handler ---------------- */
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
+
   res.status(500).json({
     success: false,
-    message: err.message || 'Server Error',
+    message: err.message || 'Server Error'
   });
 });
 

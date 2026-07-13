@@ -20,8 +20,8 @@ export const isRegularAdmin = async (req, res, next) => {
         return res.status(401).json({ success: false, message: 'Admin not found' });
       }
 
-      if (admin.role !== 'admin') {
-        return res.status(403).json({ success: false, message: 'Only regular admins can access this route' });
+      if (admin.role !== 'admin' && admin.role !== 'superadmin') {
+        return res.status(403).json({ success: false, message: 'Not authorized as admin' });
       }
 
       req.admin = admin;
