@@ -2,14 +2,7 @@ import { Payment, Quote, Service, User, KycVerification, CustomerAgreement } fro
 import { logAudit, logTimeline, sendNotification } from '../utils/auditService.js';
 import { dispatchLifecycleNotification } from '../utils/notificationEngine.js';
 import { generateInvoicePDF } from '../utils/invoiceGenerator.js';
-import Razorpay from 'razorpay';
-import crypto from 'crypto';
-
-// Initialize Razorpay conditionally (can be dummy keys for now)
-const razorpayInstance = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || 'dummy_key',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || 'dummy_secret',
-});
+import RazorpayService from '../services/RazorpayService.js';
 
 const provisionServiceForPayment = async (payment, quote, req) => {
   // Service Provisioning (Dedicated Server, AI Server, Colocation, etc.)
@@ -343,25 +336,16 @@ export const createRazorpayOrder = async (req, res) => {
       accepted_at: new Date()
     });
 
-    const isDummy = (process.env.RAZORPAY_KEY_ID || 'dummy_key') === 'dummy_key';
+    const isDummy = RazorpayService.isTestMode();
     
-    if (isDummy) {
-      // Return a fake order ID for the dummy flow
-      return res.json({
-        success: true,
-        data: { id: `dummy_order_${Math.floor(Math.random() * 1000000)}`, amount: quote.grand_total * 100, currency: 'INR' },
-        isDummy: true
-      });
-    }
-
     const options = {
-      amount: parseInt(quote.grand_total * 100), // Amount in paise
+      amount: quote.grand_total, // amount will be parsed in service
       currency: 'INR',
       receipt: `receipt_quote_${quote.id}`
     };
 
-    const order = await razorpayInstance.orders.create(options);
-    res.json({ success: true, data: order, isDummy: false, keyId: process.env.RAZORPAY_KEY_ID });
+    const order = await RazorpayService.createOrder(options);
+    res.json({ success: true, data: order, isDummy, keyId: process.env.RAZORPAY_KEY_ID });
   } catch (error) {
     console.error('Create Razorpay order error:', error);
     res.status(500).json({ success: false, message: 'Failed to create payment order' });
@@ -378,14 +362,17 @@ export const verifyRazorpayPayment = async (req, res) => {
     if (!quote) return res.status(404).json({ success: false, message: 'Quote not found' });
 
     if (!isDummy) {
-      const secret = process.env.RAZORPAY_KEY_SECRET;
-      const shasum = crypto.createHmac('sha256', secret);
-      shasum.update(`${razorpay_order_id}|${razorpay_payment_id}`);
-      const digest = shasum.digest('hex');
-
-      if (digest !== razorpay_signature) {
+      const isValid = RazorpayService.verifySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
+      if (!isValid) {
         return res.status(400).json({ success: false, message: 'Invalid payment signature' });
       }
+    }
+
+    // Idempotency check
+    const txnRef = razorpay_payment_id || `DUMMY_TXN_${razorpay_order_id}`;
+    const existingPayment = await Payment.findOne({ where: { transaction_reference: txnRef } });
+    if (existingPayment) {
+      return res.json({ success: true, message: 'Payment already verified.', data: existingPayment });
     }
 
     // Check Pre-requisites (KYC)
@@ -402,7 +389,7 @@ export const verifyRazorpayPayment = async (req, res) => {
       service_id: null,
       amount: quote.grand_total,
       payment_date: new Date(),
-      transaction_reference: razorpay_payment_id || `DUMMY_TXN_${Math.floor(Math.random() * 100000)}`,
+      transaction_reference: txnRef,
       invoice_reference: razorpay_order_id,
       payment_method: 'Razorpay',
       status: 'Verified',
@@ -435,24 +422,16 @@ export const createServiceRenewalOrder = async (req, res) => {
     
     if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
     
-    const isDummy = (process.env.RAZORPAY_KEY_ID || 'dummy_key') === 'dummy_key';
-    
-    if (isDummy) {
-      return res.json({
-        success: true,
-        data: { id: `dummy_order_renew_${Math.floor(Math.random() * 1000000)}`, amount: service.monthly_amount * 100, currency: 'INR' },
-        isDummy: true
-      });
-    }
+    const isDummy = RazorpayService.isTestMode();
 
     const options = {
-      amount: parseInt(service.monthly_amount * 100),
+      amount: service.monthly_amount,
       currency: 'INR',
       receipt: `receipt_renew_${service.id}`
     };
 
-    const order = await razorpayInstance.orders.create(options);
-    res.json({ success: true, data: order, isDummy: false, keyId: process.env.RAZORPAY_KEY_ID });
+    const order = await RazorpayService.createOrder(options);
+    res.json({ success: true, data: order, isDummy, keyId: process.env.RAZORPAY_KEY_ID });
   } catch (error) {
     console.error('Create renewal order error:', error);
     res.status(500).json({ success: false, message: 'Failed to create renewal order' });
@@ -472,11 +451,15 @@ export const verifyServiceRenewalPayment = async (req, res) => {
     if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
 
     if (!isDummy) {
-      const secret = process.env.RAZORPAY_KEY_SECRET;
-      const shasum = crypto.createHmac('sha256', secret);
-      shasum.update(`${razorpay_order_id}|${razorpay_payment_id}`);
-      const digest = shasum.digest('hex');
-      if (digest !== razorpay_signature) return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+      const isValid = RazorpayService.verifySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
+      if (!isValid) return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+    }
+
+    // Idempotency check
+    const txnRef = razorpay_payment_id || `DUMMY_RENEW_TXN_${razorpay_order_id}`;
+    const existingPayment = await Payment.findOne({ where: { transaction_reference: txnRef } });
+    if (existingPayment) {
+      return res.json({ success: true, message: 'Payment already verified.', data: existingPayment });
     }
 
     // 1. Create Verified Payment record
@@ -486,7 +469,7 @@ export const verifyServiceRenewalPayment = async (req, res) => {
       service_id: service.id,
       amount: service.monthly_amount,
       payment_date: new Date(),
-      transaction_reference: razorpay_payment_id || `DUMMY_RENEW_TXN_${Math.floor(Math.random() * 100000)}`,
+      transaction_reference: txnRef,
       invoice_reference: razorpay_order_id || `INV-RNW-${Date.now()}`,
       payment_method: 'Razorpay',
       status: 'Verified',
@@ -551,5 +534,63 @@ export const verifyServiceRenewalPayment = async (req, res) => {
   } catch (error) {
     console.error('Verify renewal payment error:', error);
     res.status(500).json({ success: false, message: 'Server error during renewal verification' });
+  }
+};
+
+// ==========================================
+// FAILURE & WEBHOOK HANDLING
+// ==========================================
+
+export const handlePaymentFailure = async (req, res) => {
+  try {
+    const { quoteId, reason, gateway_response, transaction_reference } = req.body;
+    
+    const quote = await Quote.findOne({ where: { id: quoteId, user_id: req.user.id } });
+    if (!quote) return res.status(404).json({ success: false, message: 'Quote not found' });
+
+    // Store a rejected payment record using the existing ENUM
+    const payment = await Payment.create({
+      user_id: req.user.id,
+      quote_id: quote.id,
+      amount: quote.grand_total,
+      payment_date: new Date(),
+      transaction_reference: transaction_reference || `FAILED_${Math.floor(Math.random() * 100000)}`,
+      payment_method: 'Razorpay',
+      status: 'Rejected', // Existing ENUM
+      failure_reason: reason,
+      gateway_response: typeof gateway_response === 'string' ? gateway_response : JSON.stringify(gateway_response),
+      payment_terms_accepted: true,
+      payment_terms_accepted_at: new Date()
+    });
+
+    res.json({ success: true, message: 'Payment failure logged.', data: payment });
+  } catch (error) {
+    console.error('Handle payment failure error:', error);
+    res.status(500).json({ success: false, message: 'Server error during failure logging' });
+  }
+};
+
+export const razorpayWebhookHandler = async (req, res) => {
+  try {
+    const signature = req.headers['x-razorpay-signature'];
+    const rawBody = JSON.stringify(req.body);
+
+    if (!RazorpayService.verifyWebhookSignature(rawBody, signature)) {
+      return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
+    }
+
+    const event = req.body.event;
+    
+    // Process webhook asynchronously, respond 200 OK immediately
+    if (event === 'payment.captured') {
+      console.log('Webhook: Payment captured', req.body.payload.payment.entity.id);
+    } else if (event === 'payment.failed') {
+      console.log('Webhook: Payment failed', req.body.payload.payment.entity.id);
+    }
+    
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).send('Server Error');
   }
 };

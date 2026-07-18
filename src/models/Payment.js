@@ -63,6 +63,14 @@ const Payment = sequelize.define('Payment', {
     type: DataTypes.DATE,
     allowNull: true,
   },
+  failure_reason: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  gateway_response: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
 }, {
   timestamps: true,
   createdAt: 'created_at',
